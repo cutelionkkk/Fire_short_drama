@@ -1,5 +1,5 @@
 {
-  "platforms": ["reelshort", "dramabox"],
+  "platforms": ["reelshort", "dramabox", "shortmax", "topshort", "hongguo"],
   "top_n": 50,
   "rank_surge_threshold": 10,
   "read_count_surge_pct": 50,

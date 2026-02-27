@@ -50,20 +50,29 @@
 
 | 平台 | 状态 | 数据量 | 数据来源 | 覆盖地区 |
 |------|:----:|--------|---------|---------|
-| 📺 **ReelShort** | ✅ 可用 | 热门 Top 100+ | 网页 SSR (Next.js __NEXT_DATA__) | 🌍 全球 |
-| 📺 **DramaBox** | ✅ 可用 | 热门 ~20+ | 网页 SSR (Next.js __NEXT_DATA__) | 🌍 全球 |
-| 📺 **ShortMax** | ⛔ 无公开API | — | 纯 SPA，数据需认证加载 | 🌍 全球 |
+| 📺 **ReelShort** | ✅ 可用 | 热门 Top 100+ | 网页 SSR (__NEXT_DATA__) | 🌍 全球 |
+| 📺 **DramaBox** | ✅ 可用 | 热门 ~20+ | 网页 SSR (__NEXT_DATA__) | 🌍 全球 |
+| 📺 **ShortMax** | ✅ 可用 | 热门 ~100 | Playwright 拦截解密 API 数据 | 🌍 全球 |
+| 📺 **TopShort** | ✅ 可用 | 热门 40+ | 公开 H5 API (tikshortsbox.com) | 🌍 全球 |
+| 📺 **红果短剧** | ✅ 可用 | 热门 500+ | Playwright DOM 抓取 | 🇨🇳 中国 |
 | 📺 **FlexTV** | ⛔ 不可达 | — | 网站不可访问，仅限 App | 🌍 全球 |
 | 📺 **GoodShort** | ⛔ 不可达 | — | 网站不可访问，仅限 App | 🌍 全球 |
-| 📺 **TopShort** | ⛔ 无数据 | — | 网站仅为下载引导页 | 🌍 全球 |
-| 📺 **红果短剧** | ⛔ 需认证 | — | 字节系 API，需中国大陆网络+设备认证 | 🇨🇳 中国 |
 
-### 平台接入状态说明
+### 爬虫技术细节
 
-- **✅ 可用** — 爬虫已实现，可直接抓取数据
-- **⛔ 无公开API** — 平台为纯 SPA，所有数据通过认证 API 加载，无法直接抓取
-- **⛔ 不可达** — 平台网站无法访问（仅提供 App），需要通过抓包 App 接口实现
-- **⛔ 需认证** — API 需要特定认证（设备指纹、Token），需要在对应环境中运行
+| 平台 | 方案 | 依赖 | 说明 |
+|------|------|------|------|
+| **ReelShort** | SSR 解析 | requests | 直接解析 `__NEXT_DATA__` JSON，包含评分/播放量/收藏/点赞 |
+| **DramaBox** | SSR 解析 | requests | 同上，字段包含 viewCount/chapterCount/tags |
+| **ShortMax** | 浏览器拦截 | playwright | API 响应加密，Hook `JSON.parse` 拦截解密后数据 |
+| **TopShort** | 公开 API | requests | `tikshortsbox.com/h5/Home/{hot,bestSeller,trending}` 无需认证 |
+| **红果短剧** | DOM 抓取 | playwright | 页面渲染 500+ 部剧，通过滚动加载 + DOM 解析提取 |
+
+> ⚠️ **ShortMax 和红果短剧** 需要 `playwright` 和 Chromium 浏览器：
+> ```bash
+> pip install playwright
+> playwright install chromium
+> ```
 
 > **想支持新平台？** 在 `crawler.py` 里实现一个爬虫函数，在 `platforms.py` 里注册即可。如果你有某个平台的 API 接口信息，欢迎 PR！
 
@@ -291,9 +300,10 @@ ORDER BY rank LIMIT 10;
 
 - [x] ReelShort 爬虫 ✅
 - [x] DramaBox 爬虫 ✅
-- [ ] ShortMax API 逆向（纯 SPA，需抓包 App）
+- [x] ShortMax 爬虫 ✅ (Playwright 拦截解密)
+- [x] TopShort 爬虫 ✅ (公开 H5 API)
+- [x] 红果短剧 爬虫 ✅ (Playwright DOM 抓取, 500+ 部)
 - [ ] FlexTV / GoodShort App API 逆向
-- [ ] 红果短剧 API 对接（需中国大陆服务器）
 - [ ] 多地区追踪（不同语言版本的排行）
 - [ ] 周报 / 月报汇总模式
 - [ ] 自定义监控名单（指定追踪某些短剧）
