@@ -14,7 +14,7 @@ CONFIG_FILE = os.path.join(SCRIPT_DIR, "settings.json")
 # === 默认配置 ===
 DEFAULTS = {
     # 平台
-    "platforms": ["reelshort"],
+    "platforms": ["reelshort", "dramabox"],
 
     # 抓取
     "top_n": 50,

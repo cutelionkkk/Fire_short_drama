@@ -126,19 +126,200 @@ def crawl_reelshort(top_n=None):
 
 
 # ============================================================
-# DramaBox Crawler (TODO)
+# DramaBox Crawler
 # ============================================================
 
 def crawl_dramabox(top_n=None):
-    """Crawl DramaBox hot dramas
+    """Crawl DramaBox hot dramas from web page __NEXT_DATA__
 
-    TODO: DramaBox website is SPA, need to find API endpoint.
-    Possible approaches:
-    - Reverse engineer mobile app API
-    - Use Playwright to render the page
-    - Find RSS/sitemap
+    DramaBox embeds data in Next.js page props at:
+      __NEXT_DATA__.props.pageProps.bigList (banner/featured)
+      __NEXT_DATA__.props.pageProps.smallData[].items (shelf items)
+
+    Fields: bookId, bookName, introduction, viewCount, chapterCount,
+            tags, typeOneNames, typeTwoNames, cover, viewCountDisplay
+    Note: DramaBox doesn't expose score/collect_count/read_count directly,
+          viewCount is the primary popularity metric.
     """
-    print("  ⚠️ DramaBox crawler not yet implemented")
+    top_n = top_n or TOP_N
+    url = "https://www.dramaboxapp.com/"
+
+    try:
+        resp = requests.get(url, headers=HEADERS, timeout=30)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"  ❌ Failed to fetch DramaBox: {e}")
+        return []
+
+    match = re.search(
+        r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>',
+        resp.text, re.DOTALL
+    )
+    if not match:
+        print("  ❌ No __NEXT_DATA__ found in DramaBox page")
+        return []
+
+    try:
+        next_data = json.loads(match.group(1))
+    except json.JSONDecodeError as e:
+        print(f"  ❌ Failed to parse __NEXT_DATA__: {e}")
+        return []
+
+    try:
+        props = next_data['props']['pageProps']
+    except (KeyError, TypeError) as e:
+        print(f"  ❌ Unexpected __NEXT_DATA__ structure: {e}")
+        return []
+
+    # Collect all unique dramas from bigList + smallData shelves
+    seen_ids = set()
+    all_dramas = []
+
+    def _process_item(item, shelf_name=""):
+        bid = str(item.get('bookId', ''))
+        if not bid or bid in seen_ids:
+            return
+        seen_ids.add(bid)
+
+        tags = item.get('tags', []) or []
+        type2 = item.get('typeTwoNames', []) or []
+        all_tags = tags + [t for t in type2 if t not in tags]
+        theme_str = json.dumps(all_tags, ensure_ascii=False) if all_tags else None
+
+        view_count = item.get('viewCount', 0) or 0
+
+        all_dramas.append({
+            'drama_id': bid,
+            'title': item.get('bookName', ''),
+            'description': (item.get('introduction', '') or '')[:500],
+            'theme': theme_str,
+            'episode_count': item.get('chapterCount', 0),
+            'collect_count': None,  # DramaBox doesn't expose this
+            'read_count': view_count,  # viewCount as read proxy
+            'like_count': None,
+            'score': view_count,  # Use viewCount as score for ranking
+            'cover_url': item.get('cover', ''),
+            'extra_json': json.dumps({
+                'shelf_name': shelf_name,
+                'type_one': item.get('typeOneNames', []),
+                'type_two': type2,
+                'tags': tags,
+                'author': item.get('author', ''),
+                'view_display': item.get('viewCountDisplay', ''),
+                'last_update': item.get('lastUpdateTimeDisplay', ''),
+            }, ensure_ascii=False),
+        })
+
+    # bigList (banner/featured)
+    for item in props.get('bigList', []):
+        _process_item(item, shelf_name="Featured")
+
+    # smallData (shelves)
+    for shelf in props.get('smallData', []):
+        shelf_name = shelf.get('name', '')
+        for item in shelf.get('items', []):
+            _process_item(item, shelf_name=shelf_name)
+
+    # Sort by viewCount descending, assign ranks
+    all_dramas.sort(key=lambda x: (x.get('score') or 0), reverse=True)
+
+    results = []
+    for i, drama in enumerate(all_dramas[:top_n], 1):
+        drama['rank'] = i
+        results.append(drama)
+
+    print(f"  📍 {len(results)} dramas (from {len(seen_ids)} unique)")
+    return results
+
+
+# ============================================================
+# ShortMax Crawler (SPA — no SSR data available)
+# ============================================================
+
+def crawl_shortmax(top_n=None):
+    """Crawl ShortMax hot dramas
+
+    ⚠️ ShortMax is a pure SPA (Vite + React) with no server-side rendered data.
+    The website loads all content via authenticated API calls from the client JS.
+    No public API endpoints have been found.
+
+    Possible future approaches:
+    - Intercept mobile app API via mitmproxy
+    - Use Playwright/browser automation to render and extract
+    - Monitor their App Store/Google Play listing for ranking data
+    """
+    print("  ⚠️ ShortMax: pure SPA, no public API. Crawler not available.")
+    return []
+
+
+# ============================================================
+# FlexTV Crawler (website unreachable)
+# ============================================================
+
+def crawl_flextv(top_n=None):
+    """Crawl FlexTV hot dramas
+
+    ⚠️ FlexTV website (flextv.co / flextvapp.com) is currently unreachable
+    from most regions. The platform is primarily app-based.
+
+    Possible future approaches:
+    - Intercept mobile app API
+    - Check if they have a web presence in specific regions
+    """
+    print("  ⚠️ FlexTV: website unreachable. Crawler not available.")
+    return []
+
+
+# ============================================================
+# GoodShort Crawler (website unreachable)
+# ============================================================
+
+def crawl_goodshort(top_n=None):
+    """Crawl GoodShort hot dramas
+
+    ⚠️ GoodShort website is currently unreachable.
+    The platform is primarily app-based.
+    """
+    print("  ⚠️ GoodShort: website unreachable. Crawler not available.")
+    return []
+
+
+# ============================================================
+# TopShort Crawler (no data on website)
+# ============================================================
+
+def crawl_topshort(top_n=None):
+    """Crawl TopShort hot dramas
+
+    ⚠️ TopShort website is a static landing page with no drama data.
+    All content is served through the mobile app only.
+    """
+    print("  ⚠️ TopShort: static landing page only. Crawler not available.")
+    return []
+
+
+# ============================================================
+# 红果短剧 Crawler (requires auth / China-only API)
+# ============================================================
+
+def crawl_hongguo(top_n=None):
+    """Crawl 红果短剧 (Hongguo) hot dramas
+
+    ⚠️ 红果短剧 is a ByteDance/Fanqie product. The website is a pure SPA
+    that loads data from internal APIs (fqnovel.com) which require:
+    - China mainland network access
+    - App-specific authentication tokens
+    - Device fingerprinting
+
+    The web version at hongguoduanju.com is primarily a download landing page
+    with limited content.
+
+    Possible future approaches:
+    - Run from a China-based server with proper API tokens
+    - Intercept mobile app API via mitmproxy
+    - Use third-party data aggregation services
+    """
+    print("  ⚠️ 红果短剧: China-only API with auth required. Crawler not available.")
     return []
 
 
@@ -149,6 +330,11 @@ def crawl_dramabox(top_n=None):
 CRAWLERS = {
     "reelshort": crawl_reelshort,
     "dramabox": crawl_dramabox,
+    "shortmax": crawl_shortmax,
+    "flextv": crawl_flextv,
+    "goodshort": crawl_goodshort,
+    "topshort": crawl_topshort,
+    "hongguo": crawl_hongguo,
 }
 
 
