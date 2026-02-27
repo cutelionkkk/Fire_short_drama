@@ -1,0 +1,9 @@
+settings.json
+*.db
+*.db-wal
+*.db-shm
+analysis_data.json
+latest_report.txt
+__pycache__/
+*.pyc
+.env

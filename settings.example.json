@@ -1,0 +1,16 @@
+{
+  "platforms": ["reelshort"],
+  "top_n": 50,
+  "rank_surge_threshold": 10,
+  "read_count_surge_pct": 50,
+  "collect_surge_pct": 30,
+  "report_max_items": 10,
+  "report_language": "zh",
+  "notify_channels": ["discord"],
+  "channel_config": {
+    "discord": {
+      "webhook_url": "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL",
+      "mention_role": ""
+    }
+  }
+}
