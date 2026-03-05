@@ -14,6 +14,10 @@
 </p>
 
 <p align="center">
+  <b>中文</b> | <a href="README.en.md">English</a>
+</p>
+
+<p align="center">
   <a href="#快速上手">快速开始</a> · <a href="#支持的平台">支持平台</a> · <a href="#分析能力">分析能力</a> · <a href="#通知渠道">通知渠道</a> · <a href="#ai-分析">AI 分析</a>
 </p>
 
