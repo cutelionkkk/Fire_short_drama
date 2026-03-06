@@ -474,172 +474,169 @@ def crawl_topshort(top_n=None):
 
 
 # ============================================================
-# 红果短剧 Crawler (Playwright — DOM extraction)
+# 红果短剧 Crawler (SSR _ROUTER_DATA extraction via requests)
 # ============================================================
 
 def crawl_hongguo(top_n=None):
-    """Crawl 红果短剧 (Hongguo) hot dramas via Playwright browser automation.
+    """Crawl 红果短剧 (Hongguo) hot dramas via SSR data extraction.
 
-    红果短剧 is a ByteDance/Fanqie product. The website at hongguoduanju.com
-    is a full SPA that renders 500+ dramas with titles, episode counts, tags,
-    descriptions, and cover images. No API authentication is needed — all data
-    is rendered in the DOM after the JS executes.
+    红果短剧 is a ByteDance/Fanqie product at hongguoduanju.com.
+    The homepage is server-side rendered and embeds a full drama catalog
+    (500+ dramas) inside `window._ROUTER_DATA` in the HTML.
 
-    We use Playwright to:
-    1. Open https://www.hongguoduanju.com/ in headless browser
-    2. Scroll down to trigger lazy loading
-    3. Extract drama data from <a href="...?series_id=XXX"> elements
+    ⚠️  IMPORTANT — Play count / view count:
+        红果网页端 does NOT expose play counts, view counts, or any
+        popularity metrics in its web UI or SSR data. These numbers only
+        exist inside the native App. The `read_count`, `like_count`, and
+        `collect_count` fields are therefore always None for this platform.
+        `score` is derived from editorial page position (index 0 = top pick).
 
-    Data fields: series_id, title, episode_count, tags (genre), description,
-    cover image URL. Position on page is used as rank proxy (editorial ranking).
+    Strategy:
+        1. Fetch homepage HTML with requests (no Playwright needed)
+        2. Extract the `window._ROUTER_DATA` JSON block via bracket matching
+        3. Parse `loaderData.page.videoList` (500+ items, SSR-rendered)
+        4. Also parse `bannerList` for featured dramas
+        5. Assign rank by page position (editorial ordering)
     """
-    import asyncio
-
     top_n = top_n or TOP_N
 
-    JS_EXTRACT = r"""
-    () => {
-        const items = [];
-        const seen = new Set();
-        const links = document.querySelectorAll('a[href*="series_id"]');
-
-        const genreTags = new Set([
-            '都市情感','女性成长','民国爱情','奇幻爱情','宫斗宅斗',
-            '玄幻仙侠','都市日常','都市脑洞','家庭伦理','古风言情',
-            '现代言情','古风权谋','都市玄幻','萌宝','种田经营',
-            '奇幻脑洞','年代爱情','现言甜宠','战神归来','历史古代',
-            '悬疑情感','剧情','东方玄幻','热血逆袭'
-        ]);
-
-        for (const a of links) {
-            const href = a.href || '';
-            const match = href.match(/series_id=(\d+)/);
-            if (!match) continue;
-            const seriesId = match[1];
-            if (seen.has(seriesId)) continue;
-            seen.add(seriesId);
-
-            const text = a.innerText.trim();
-            const img = a.querySelector('img');
-            const imgSrc = img ? img.src : '';
-            const lines = text.split('\n').map(l => l.trim()).filter(l => l);
-
-            let episodes = 0;
-            let title = '';
-            let tags = [];
-            let description = '';
-
-            for (const line of lines) {
-                const epMatch = line.match(/全(\d+)集/);
-                if (epMatch) {
-                    episodes = parseInt(epMatch[1]);
-                } else if (line.length > 50) {
-                    description = line;
-                } else if (!title && line.length > 1 && !genreTags.has(line)) {
-                    title = line;
-                } else if (line.length > 1) {
-                    tags.push(line);
-                }
-            }
-
-            if (seriesId && (title || tags.length > 0)) {
-                items.push({
-                    series_id: seriesId,
-                    title: title,
-                    episodes: episodes,
-                    tags: tags,
-                    description: description.substring(0, 500),
-                    cover: imgSrc,
-                });
-            }
-        }
-        return items;
+    url = 'https://www.hongguoduanju.com/'
+    headers_req = {
+        'User-Agent': (
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/120.0.0.0 Safari/537.36'
+        ),
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'zh-CN,zh;q=0.9',
+        'Referer': 'https://www.hongguoduanju.com/',
     }
-    """
-
-    async def _crawl():
-        try:
-            from playwright.async_api import async_playwright
-        except ImportError:
-            print("  ❌ 红果短剧 requires playwright: pip install playwright && playwright install chromium")
-            return []
-
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(
-                headless=True,
-                args=[
-                    '--no-sandbox', '--disable-gpu',
-                    '--disable-software-rasterizer',
-                    '--disable-dev-shm-usage',
-                    '--single-process',
-                ],
-            )
-            context = await browser.new_context(
-                user_agent='Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) '
-                           'AppleWebKit/605.1.15 (KHTML, like Gecko) '
-                           'Version/17.0 Mobile/15E148 Safari/604.1'
-            )
-            page = await context.new_page()
-
-            try:
-                await page.goto('https://www.hongguoduanju.com/',
-                                timeout=30000, wait_until='networkidle')
-            except Exception:
-                pass
-            await page.wait_for_timeout(5000)
-
-            # Scroll to trigger lazy loading
-            for _ in range(8):
-                await page.evaluate('window.scrollBy(0, 1000)')
-                await page.wait_for_timeout(800)
-
-            data = await page.evaluate(JS_EXTRACT)
-            await browser.close()
-            return data
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                data = pool.submit(lambda: asyncio.run(_crawl())).result(timeout=90)
-        else:
-            data = loop.run_until_complete(_crawl())
-    except RuntimeError:
-        data = asyncio.run(_crawl())
-
-    if not data:
-        print("  ❌ 红果短剧: failed to extract data from page")
+        resp = requests.get(url, headers=headers_req, timeout=30)
+        resp.raise_for_status()
+    except Exception as e:
+        print(f"  ❌ 红果短剧: failed to fetch homepage: {e}")
         return []
 
-    # Filter: only items with a real title (skip banner/genre-only items)
-    valid = [d for d in data if d.get('title') and d.get('episodes', 0) > 0]
+    html = resp.text
 
+    # Extract window._ROUTER_DATA via bracket-depth matching (handles nested JSON)
+    marker = 'window._ROUTER_DATA = '
+    start = html.find(marker)
+    if start == -1:
+        print("  ❌ 红果短剧: window._ROUTER_DATA not found in page")
+        return []
+    start += len(marker)
+
+    depth = 0
+    in_str = False
+    esc = False
+    end = start
+    for i, ch in enumerate(html[start:], start):
+        if esc:
+            esc = False
+            continue
+        if ch == '\\' and in_str:
+            esc = True
+            continue
+        if ch == '"' and not esc:
+            in_str = not in_str
+        if not in_str:
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+
+    try:
+        router_data = json.loads(html[start:end])
+    except json.JSONDecodeError as e:
+        print(f"  ❌ 红果短剧: failed to parse _ROUTER_DATA: {e}")
+        return []
+
+    page_data = router_data.get('loaderData', {}).get('page', {})
+    if not page_data or not page_data.get('isSuccess'):
+        print("  ❌ 红果短剧: page data missing or unsuccessful")
+        return []
+
+    # videoList contains the full catalog (500+ dramas, editorial ordering)
+    video_list = page_data.get('videoList', [])
+    # bannerList has featured/promoted dramas (may overlap with videoList)
+    banner_list = page_data.get('bannerList', []) + page_data.get('mBannerList', [])
+
+    if not video_list:
+        print("  ❌ 红果短剧: videoList is empty")
+        return []
+
+    seen_ids = set()
     all_dramas = []
-    for rank, item in enumerate(valid, 1):
-        tags = item.get('tags', [])
+
+    def _parse_episode_count(text):
+        """Extract episode count from strings like '全73集' or '更新至12集'."""
+        if not text:
+            return 0
+        m = re.search(r'(\d+)集', text)
+        return int(m.group(1)) if m else 0
+
+    def _add_drama(item, position, is_banner=False):
+        sid = str(item.get('series_id', ''))
+        if not sid or sid in seen_ids:
+            return
+        seen_ids.add(sid)
+
+        tags = item.get('tags', []) or []
         theme_str = json.dumps(tags, ensure_ascii=False) if tags else None
 
+        ep_text = item.get('episode_right_text', '')
+        episode_count = _parse_episode_count(ep_text)
+
         all_dramas.append({
-            'drama_id': item['series_id'],
-            'title': item['title'],
-            'description': item.get('description', ''),
+            'drama_id': sid,
+            'title': item.get('series_name', ''),
+            'description': (item.get('series_intro', '') or '')[:500],
             'theme': theme_str,
-            'episode_count': item.get('episodes', 0),
+            'episode_count': episode_count,
+            # ⚠️ 红果网页端不暴露播放量/收藏量/点赞量，均为 None
             'collect_count': None,
             'read_count': None,
             'like_count': None,
-            'score': len(valid) - rank + 1,  # Position-based score (higher = earlier on page)
-            'rank': rank,
-            'cover_url': item.get('cover', ''),
+            # score = inverse position (earlier on page = higher score)
+            # Banner items get a bonus to reflect editorial prominence
+            'score': 100000 - position + (50000 if is_banner else 0),
+            'cover_url': item.get('series_cover', ''),
             'extra_json': json.dumps({
                 'source': 'hongguoduanju.com',
-                'position_rank': rank,
+                'position': position,
+                'is_banner': is_banner,
+                'episode_right_text': ep_text,
+                # Note: play_count/view_count not available on web
+                'play_count_note': 'unavailable — web UI does not expose view counts',
             }, ensure_ascii=False),
         })
 
-    results = all_dramas[:top_n]
-    print(f"  📍 {len(results)} dramas (from {len(valid)} valid, {len(data)} total on page)")
+    # Add banner items first (higher editorial weight)
+    for pos, item in enumerate(banner_list):
+        _add_drama(item, pos, is_banner=True)
+
+    # Add main video list
+    for pos, item in enumerate(video_list):
+        _add_drama(item, pos, is_banner=False)
+
+    # Sort by score, assign ranks
+    all_dramas.sort(key=lambda x: x.get('score', 0), reverse=True)
+    results = []
+    for rank, drama in enumerate(all_dramas[:top_n], 1):
+        drama['rank'] = rank
+        results.append(drama)
+
+    print(f"  📍 {len(results)} dramas "
+          f"(from {len(all_dramas)} unique; "
+          f"{len(video_list)} in videoList, {len(banner_list)} banners)")
+    print("  ⚠️  注意：红果网页端不暴露播放量，read_count/like_count 均为 None，"
+          "score 基于页面位置（编辑排序）")
     return results
 
 
