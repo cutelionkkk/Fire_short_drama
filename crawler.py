@@ -7,7 +7,29 @@ import time
 import traceback
 from datetime import datetime, timezone
 
-import requests
+try:
+    from scrapling.fetchers import Fetcher as ScraplingFetcher
+    _USE_SCRAPLING = True
+except ImportError:
+    import requests
+    _USE_SCRAPLING = False
+
+
+def _http_get(url, headers=None, timeout=30):
+    """Unified HTTP GET using Scrapling if available, else requests.
+    Returns a response-like object with .text, .json(), .status attributes.
+    """
+    if _USE_SCRAPLING:
+        page = ScraplingFetcher.get(url, headers=headers or {}, timeout=timeout)
+        if page.status not in (200, 301, 302):
+            raise Exception(f"HTTP {page.status}")
+        return page
+    else:
+        resp = requests.get(url, headers=headers or {}, timeout=timeout)
+        resp.raise_for_status()
+        # Normalise: add .status alias
+        resp.status = resp.status_code
+        return resp
 
 from config import TOP_N, load_settings
 from database import insert_dramas, log_crawl, init_db
@@ -38,8 +60,7 @@ def crawl_reelshort(top_n=None):
     url = "https://www.reelshort.com/"
 
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=30)
-        resp.raise_for_status()
+        resp = _http_get(url, headers=HEADERS, timeout=30)
     except Exception as e:
         print(f"  ❌ Failed to fetch ReelShort: {e}")
         return []
@@ -145,8 +166,7 @@ def crawl_dramabox(top_n=None):
     url = "https://www.dramaboxapp.com/"
 
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=30)
-        resp.raise_for_status()
+        resp = _http_get(url, headers=HEADERS, timeout=30)
     except Exception as e:
         print(f"  ❌ Failed to fetch DramaBox: {e}")
         return []
@@ -422,8 +442,7 @@ def crawl_topshort(top_n=None):
 
     for endpoint in ['hot', 'bestSeller', 'trending']:
         try:
-            resp = requests.get(f"{base}/{endpoint}", headers=HEADERS, timeout=15)
-            resp.raise_for_status()
+            resp = _http_get(f"{base}/{endpoint}", headers=HEADERS, timeout=15)
             data = resp.json()
         except Exception as e:
             print(f"  ⚠️ TopShort/{endpoint}: {e}")
@@ -513,8 +532,7 @@ def crawl_hongguo(top_n=None):
     }
 
     try:
-        resp = requests.get(url, headers=headers_req, timeout=30)
-        resp.raise_for_status()
+        resp = _http_get(url, headers=headers_req, timeout=30)
     except Exception as e:
         print(f"  ❌ 红果短剧: failed to fetch homepage: {e}")
         return []
